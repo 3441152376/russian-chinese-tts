@@ -1,0 +1,19 @@
+# Systemd 服务文件示例
+# 保存到 /etc/systemd/system/edge-tts.service
+
+[Unit]
+Description=Edge TTS API Service
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/edge-tts
+Environment="PATH=/opt/edge-tts/venv/bin"
+ExecStart=/opt/edge-tts/venv/bin/python3 /opt/edge-tts/run.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+
