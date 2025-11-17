@@ -4,7 +4,7 @@
 """
 from pathlib import Path
 from typing import Optional, List
-import edge_tts
+import edge_tts  # type: ignore[reportMissingImports]
 from app.config import settings
 from app.utils import (
     app_logger,
