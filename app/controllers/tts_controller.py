@@ -3,8 +3,10 @@
 处理 TTS 相关的 API 请求
 """
 from fastapi import APIRouter, HTTPException, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from typing import Optional
+import base64
+import aiofiles
 from app.services import TTSService
 from app.models import (
     TTSRequest,
@@ -21,6 +23,65 @@ router = APIRouter(prefix="/tts", tags=["文本转语音"])
 
 # 创建服务实例
 tts_service = TTSService()
+
+
+@router.post("/generate-stream")
+async def generate_speech_stream(request: TTSRequest):
+    """
+    流式生成语音文件（直接返回音频流，适合快速播放）
+    
+    Args:
+        request: TTS 请求参数
+        
+    Returns:
+        音频文件流
+    """
+    try:
+        app_logger.info(f"收到流式 TTS 请求 - 文本长度: {len(request.text)}")
+        
+        # 验证文本长度
+        if len(request.text) > settings.max_text_length:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"文本长度超过限制 ({settings.max_text_length} 字符)"
+            )
+        
+        # 调用服务生成语音
+        filename, file_path, actual_rate = await tts_service.text_to_speech(
+            text=request.text,
+            voice=request.voice,
+            rate=request.rate,
+            volume=request.volume,
+            pitch=request.pitch
+        )
+        
+        # 流式返回音频文件
+        async def generate():
+            async with aiofiles.open(file_path, 'rb') as f:
+                while True:
+                    chunk = await f.read(8192)  # 8KB 块
+                    if not chunk:
+                        break
+                    yield chunk
+        
+        return StreamingResponse(
+            generate(),
+            media_type="audio/mpeg",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "X-Audio-Filename": filename,
+                "X-Actual-Rate": actual_rate
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        app_logger.error(f"流式生成语音失败: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"生成语音失败: {str(e)}"
+        )
 
 
 @router.post("/generate", response_model=BaseResponse)
@@ -58,12 +119,30 @@ async def generate_speech(request: TTSRequest):
         
         # 构建响应（使用完整 URL）
         audio_url = f"{settings.base_url}{settings.api_prefix}/tts/download/{filename}"
+        
+        # 如果请求直接返回音频数据，读取文件并编码为 base64
+        audio_data = None
+        if request.return_audio:
+            try:
+                # 检查文件大小，只对小文件返回 base64（避免响应过大）
+                file_size_mb = file_path.stat().st_size / (1024 * 1024)
+                if file_size_mb <= settings.max_base64_audio_size_mb:  # 只对小于限制的文件返回 base64
+                    with open(file_path, "rb") as f:
+                        audio_bytes = f.read()
+                        audio_data = base64.b64encode(audio_bytes).decode('utf-8')
+                        app_logger.info(f"返回音频数据（base64），大小: {file_size_mb:.2f}MB")
+                else:
+                    app_logger.warning(f"文件过大（{file_size_mb:.2f}MB），不返回 base64 数据")
+            except Exception as e:
+                app_logger.warning(f"读取音频文件失败: {str(e)}")
+        
         response_data = TTSResponse(
             audio_url=audio_url,
             text=request.text,
             voice=request.voice or settings.default_voice,
             duration=duration,
-            actual_rate=actual_rate
+            actual_rate=actual_rate,
+            audio_data=audio_data
         )
         
         return BaseResponse(

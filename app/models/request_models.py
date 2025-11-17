@@ -36,6 +36,11 @@ class TTSRequest(BaseModel):
         description="音调，例如：+0Hz、-50Hz、+50Hz"
     )
     
+    return_audio: Optional[bool] = Field(
+        False,
+        description="是否直接在响应中返回音频数据（base64编码），适用于小文件快速播放"
+    )
+    
     @field_validator("text")
     @classmethod
     def validate_text(cls, v: str) -> str:

@@ -146,7 +146,7 @@ class TTSService:
         rate: Optional[str] = None,
         volume: Optional[str] = None,
         pitch: Optional[str] = None
-    ) -> tuple[str, Path]:
+    ) -> tuple[str, Path, str, bool]:
         """
         将文本转换为语音（仅支持中文和俄语）
         
@@ -158,7 +158,7 @@ class TTSService:
             pitch: 音调
             
         Returns:
-            (文件名, 文件路径, 实际使用的语速) 元组
+            (文件名, 文件路径, 实际使用的语速, 是否缓存命中) 元组
         """
         try:
             # 使用默认值或提供的参数
@@ -193,10 +193,10 @@ class TTSService:
             # 检查缓存是否存在
             cached_file = check_cache_exists(cache_key, ".mp3")
             if cached_file:
-                app_logger.info(f"从缓存获取音频文件: {cache_key}")
+                app_logger.info(f"[性能追踪] 缓存命中 - cache_key: {cache_key}")
                 # 返回缓存文件名和路径
                 cache_filename = get_cache_filename(cache_key, ".mp3")
-                return cache_filename, cached_file, selected_rate
+                return cache_filename, cached_file, selected_rate, True
             
             app_logger.info(
                 f"开始文本转语音 - "
@@ -234,9 +234,9 @@ class TTSService:
             
             # 返回缓存文件名和路径
             cache_filename = get_cache_filename(cache_key, ".mp3")
-            app_logger.info(f"文本转语音成功 - 文件: {cache_filename}, 语速: {selected_rate}, 已缓存")
+            app_logger.info(f"[性能追踪] 文本转语音成功（新生成） - 文件: {cache_filename}, 语速: {selected_rate}, 已缓存")
             
-            return cache_filename, cached_file_path, selected_rate
+            return cache_filename, cached_file_path, selected_rate, False
             
         except Exception as e:
             app_logger.error(f"文本转语音失败: {str(e)}")

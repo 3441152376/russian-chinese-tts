@@ -22,6 +22,7 @@ class TTSResponse(BaseModel):
     voice: str = Field(..., description="使用的语音名称")
     duration: Optional[float] = Field(None, description="音频时长（秒）")
     actual_rate: Optional[str] = Field(None, description="实际使用的语速（自动优化后）")
+    audio_data: Optional[str] = Field(None, description="音频数据（base64编码），仅在 return_audio=true 时返回")
 
 
 class VoiceInfo(BaseModel):
