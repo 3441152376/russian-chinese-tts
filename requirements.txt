@@ -12,3 +12,6 @@ python-multipart==0.0.12
 
 # 日志
 loguru==0.7.2
+
+# 异步文件操作
+aiofiles==24.1.0

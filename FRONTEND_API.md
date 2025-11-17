@@ -129,10 +129,12 @@ fetch('https://ttsedge.egg404.com/api/v1/tts/voices?locale=ru-RU&gender=Female')
 | rate | string | 否 | 语速（-50% 到 +50%） | `"+0%"`、`"-30%"` |
 | volume | string | 否 | 音量（-50% 到 +50%） | `"+0%"` |
 | pitch | string | 否 | 音调（-50Hz 到 +50Hz） | `"+0Hz"` |
+| return_audio | boolean | 否 | 是否直接在响应中返回音频数据（base64编码），适用于小文件快速播放 | `false` |
 
 **注意**: 
 - 如果不指定 `voice`，将使用默认语音（中文：`zh-CN-XiaoxiaoNeural`）
 - 俄语长文本（超过50字符）会自动降低语速至 `-30%`，除非用户明确指定语速
+- **性能优化**：设置 `return_audio: true` 可以直接在响应中获取音频数据，避免二次请求，特别适合单词和短语的快速播放
 
 **请求示例**:
 
@@ -164,14 +166,160 @@ console.log(result);
     "text": "你好，世界！",
     "voice": "zh-CN-XiaoxiaoNeural",
     "duration": null,
-    "actual_rate": "+0%"
+    "actual_rate": "+0%",
+    "audio_data": "base64编码的音频数据（仅在 return_audio=true 时返回）"
+  }
+}
+```
+
+**性能优化示例**（直接返回音频数据，避免二次请求）：
+
+```javascript
+// 设置 return_audio: true，直接在响应中获取音频数据
+const response = await fetch('https://ttsedge.egg404.com/api/v1/tts/generate', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    text: 'территория',
+    voice: 'ru-RU-SvetlanaNeural',
+    return_audio: true  // 直接返回音频数据
+  })
+});
+
+const result = await response.json();
+
+if (result.code === 200 && result.data.audio_data) {
+  // 直接使用 base64 数据播放，无需二次请求
+  const audioData = result.data.audio_data;
+  const audioBlob = base64ToBlob(audioData, 'audio/mpeg');
+  const audioUrl = URL.createObjectURL(audioBlob);
+  const audio = new Audio(audioUrl);
+  audio.play();
+  
+  // base64 转 Blob 的辅助函数
+  function base64ToBlob(base64, mimeType) {
+    const byteCharacters = atob(base64);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    return new Blob([byteArray], { type: mimeType });
   }
 }
 ```
 
 ---
 
-### 4. 下载音频文件
+### 4. 流式生成语音（推荐用于单词和短语）
+
+**接口**: `POST /api/v1/tts/generate-stream`
+
+**说明**: 直接返回音频流，一次请求完成，适合快速播放单词和短语。比普通接口更快，因为避免了二次请求。
+
+**请求参数**: 与 `/api/v1/tts/generate` 相同
+
+| 参数 | 类型 | 必填 | 说明 | 示例 |
+|------|------|------|------|------|
+| text | string | 是 | 要转换的文本内容（1-5000字符） | `"你好"` |
+| voice | string | 否 | 语音名称 | `"zh-CN-XiaoxiaoNeural"` |
+| rate | string | 否 | 语速（-50% 到 +50%） | `"+0%"` |
+| volume | string | 否 | 音量（-50% 到 +50%） | `"+0%"` |
+| pitch | string | 否 | 音调（-50Hz 到 +50Hz） | `"+0Hz"` |
+
+**响应**: 直接返回音频流（`audio/mpeg`），响应头包含：
+- `Content-Type: audio/mpeg`
+- `Content-Disposition: attachment; filename="{filename}"`
+- `X-Audio-Filename`: 音频文件名
+- `X-Actual-Rate`: 实际使用的语速
+
+**请求示例**:
+
+```javascript
+// 方式一：使用 fetch 获取音频流
+const response = await fetch('https://ttsedge.egg404.com/api/v1/tts/generate-stream', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    text: '你好',
+    voice: 'zh-CN-XiaoxiaoNeural'
+  })
+});
+
+// 获取音频 Blob
+const audioBlob = await response.blob();
+const audioUrl = window.URL.createObjectURL(audioBlob);
+
+// 播放音频
+const audio = new Audio(audioUrl);
+audio.play();
+
+// 或者直接使用响应 URL
+const audio2 = new Audio(audioUrl);
+audio2.play();
+```
+
+**性能对比**:
+- **流式接口** (`/generate-stream`): 一次请求，直接返回音频，耗时约 0.01-0.07 秒（缓存命中）
+- **普通接口** (`/generate`): 两次请求（先获取URL，再下载），总耗时约 1.5-3.2 秒
+
+**使用建议**:
+- ✅ **单词和短语**（< 100字符）：使用流式接口，快速播放
+- ✅ **长文本**（> 100字符）：使用普通接口，可以获取更多元数据（如 duration）
+
+**完整示例**:
+
+```javascript
+/**
+ * 流式生成语音（推荐用于单词和短语）
+ */
+async function generateSpeechStream(text, voice = 'zh-CN-XiaoxiaoNeural') {
+  try {
+    const response = await fetch('https://ttsedge.egg404.com/api/v1/tts/generate-stream', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ text, voice })
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    // 获取音频 Blob
+    const audioBlob = await response.blob();
+    const audioUrl = window.URL.createObjectURL(audioBlob);
+    
+    // 获取文件名（从响应头）
+    const filename = response.headers.get('X-Audio-Filename') || 'audio.mp3';
+    const actualRate = response.headers.get('X-Actual-Rate') || '+0%';
+
+    return {
+      audioUrl,
+      filename,
+      actualRate,
+      blob: audioBlob
+    };
+  } catch (error) {
+    console.error('生成语音失败:', error);
+    throw error;
+  }
+}
+
+// 使用示例
+const result = await generateSpeechStream('你好', 'zh-CN-XiaoxiaoNeural');
+const audio = new Audio(result.audioUrl);
+audio.play();
+```
+
+---
+
+### 5. 下载音频文件
 
 **接口**: `GET /api/v1/tts/download/{filename}`
 

@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     # 安全配置
     max_text_length: int = 5000
     allowed_audio_formats: list[str] = [".mp3", ".wav", ".webm"]
+    max_base64_audio_size_mb: float = 1.0  # 直接返回 base64 的最大文件大小（MB）
     
     # CORS 配置
     cors_origins: list[str] = [
